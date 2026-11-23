@@ -1109,3 +1109,517 @@ footer {
 .toast.error {
     background-color: var(--danger-status-bg);
 }
+
+/* ============================================================
+   Redesign: expenses only, good/dumb purchases, Overview page
+   ============================================================ */
+
+:root {
+    --good: #3FA66B;
+    --dumb: #E0524F;
+}
+
+[data-theme="dark"] {
+    --good: #5CC98B;
+    --dumb: #EF6F6C;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+.good-text { color: var(--good); }
+.dumb-text { color: var(--dumb); }
+
+/* --- Page tabs: "My Budget" | "Overview" --- */
+header {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
+.view-tabs {
+    display: inline-flex;
+    background: var(--background);
+    padding: 0.25rem;
+    border-radius: 100px;
+    gap: 0.25rem;
+}
+
+.view-tab {
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1.05rem;
+    font-weight: 500;
+    padding: 0.5rem 1.4rem;
+    border-radius: 100px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all var(--transition);
+}
+
+.view-tab:hover {
+    opacity: 0.9;
+}
+
+.view-tab.active {
+    background: var(--card-bg);
+    opacity: 1;
+    box-shadow: var(--shadow);
+}
+
+/* --- Total spent card --- */
+.balance-card {
+    padding: 0.9rem 0.5rem;
+}
+
+.balance-card .amount {
+    font-size: 1.6rem;
+}
+
+.spent-split {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.split-dot {
+    opacity: 0.4;
+}
+
+/* --- Transaction list --- */
+.transaction-item .description {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+}
+
+.purchase-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.1rem 0.5rem;
+    border-radius: 100px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.purchase-badge.good {
+    color: var(--good);
+    background: color-mix(in srgb, var(--good) 15%, transparent);
+}
+
+.purchase-badge.dumb {
+    color: var(--dumb);
+    background: color-mix(in srgb, var(--dumb) 15%, transparent);
+}
+
+.transaction-item .transaction-amount.good { color: var(--good); }
+.transaction-item .transaction-amount.dumb { color: var(--dumb); }
+.transaction-item .transaction-amount.unrated { color: var(--text); opacity: 0.8; }
+
+/* --- Add / edit expense form --- */
+.modal-header {
+    margin-bottom: 1rem;
+}
+
+.modal-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.field-label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    text-align: left;
+    margin-bottom: -0.4rem;
+}
+
+#transactionForm select {
+    font-family: inherit;
+}
+
+/* ============================================================
+   Overview page
+   ============================================================ */
+
+.month-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.month-label {
+    min-width: 10rem;
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--good);
+}
+
+.month-btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 1.6rem;
+    line-height: 1;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all var(--transition);
+}
+
+.month-btn:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.15);
+}
+
+/* Square box: ring in the middle, icons around it */
+.ring-wrap {
+    position: relative;
+    width: min(440px, 100%);
+    aspect-ratio: 1 / 1;
+    margin: 0 auto 1rem;
+}
+
+.ring {
+    position: absolute;
+    left: 21%;
+    top: 21%;
+    width: 58%;
+    height: 58%;
+    transform: rotate(-90deg); /* first slice starts at the top */
+}
+
+.ring-track,
+.ring-segment {
+    fill: none;
+    stroke-width: 11;
+}
+
+.ring-track {
+    stroke: var(--card-bg);
+}
+
+.ring-segment {
+    transition: stroke-dasharray 0.4s ease;
+}
+
+.ring-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    gap: 0.15rem;
+}
+
+.ring-total {
+    font-size: 1.35rem;
+    font-weight: 600;
+}
+
+.ring-good,
+.ring-dumb {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.ring-good { color: var(--good); }
+.ring-dumb { color: var(--dumb); }
+
+.ring-icon {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.ring-icon svg {
+    width: 30px;
+    height: 30px;
+}
+
+.ring-icon.empty {
+    opacity: 0.35;
+}
+
+.ring-pct {
+    font-size: 0.75rem;
+    color: var(--text);
+    opacity: 0.75;
+    min-height: 0.9rem;
+}
+
+/* Good vs dumb bar (replaces the "Balance" bar of the inspiration app) */
+.split-bar-card {
+    width: min(440px, 100%);
+    margin: 0 auto 1.25rem;
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    box-shadow: var(--shadow);
+}
+
+.split-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+}
+
+.split-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 100px;
+    overflow: hidden;
+    background: var(--border);
+}
+
+.split-bar-good { background: var(--good); transition: width 0.4s ease; }
+.split-bar-dumb { background: var(--dumb); transition: width 0.4s ease; }
+
+/* Category breakdown list */
+.category-list {
+    width: min(440px, 100%);
+    margin: 0 auto 1rem;
+    display: grid;
+    gap: 0.4rem;
+}
+
+.category-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 0.55rem 0.9rem;
+    font-size: 0.9rem;
+}
+
+.category-icon svg {
+    width: 22px;
+    height: 22px;
+    display: block;
+}
+
+.category-pct {
+    opacity: 0.6;
+    font-size: 0.8rem;
+}
+
+.category-amount {
+    font-weight: 600;
+    min-width: 5.5rem;
+    text-align: right;
+}
+
+.empty-state {
+    text-align: center;
+    opacity: 0.6;
+    font-size: 0.9rem;
+    padding: 1rem 0;
+}
+
+@media (max-width: 600px) {
+    .container {
+        max-width: 100%;
+    }
+
+    header {
+        padding: 0 2.25rem; /* keep tabs clear of the theme button */
+    }
+
+    .view-tab {
+        font-size: 0.95rem;
+        padding: 0.45rem 1rem;
+    }
+
+    .ring-icon svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    .ring-total {
+        font-size: 1.1rem;
+    }
+}
+
+/* ============================================================
+   Month navigation: [‹] [📅 November 2026] [›]   [Add Expense]
+   ============================================================ */
+
+.action-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.action-row .add-transaction-btn {
+    margin: 0;
+    height: 2.4rem;
+}
+
+.month-control {
+    position: relative;
+    display: flex;
+    align-items: center;
+    background: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    height: 2.4rem;
+}
+
+.month-step {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 1.4rem;
+    line-height: 1;
+    width: 2.2rem;
+    height: 100%;
+    cursor: pointer;
+    opacity: 0.6;
+    border-radius: 8px;
+    transition: all var(--transition);
+}
+
+.month-step:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.month-picker-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 0 0.6rem;
+    height: 100%;
+    min-width: 10.5rem;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+.month-picker-btn:hover {
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.month-picker-btn svg {
+    width: 16px;
+    height: 16px;
+    opacity: 0.7;
+}
+
+/* Pop-up picker */
+.month-picker {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 500;
+    width: 16.5rem;
+    background: var(--container);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    padding: 0.75rem;
+}
+
+.picker-year {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+    font-weight: 600;
+}
+
+.picker-year button {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 1.3rem;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.picker-year button:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.picker-months {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem;
+}
+
+.picker-month {
+    background: var(--card-bg);
+    border: 1px solid transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.5rem 0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.picker-month:hover {
+    border-color: var(--border);
+}
+
+.picker-month.today {
+    border-color: var(--good);
+}
+
+.picker-month.selected {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.picker-today {
+    width: 100%;
+    margin-top: 0.6rem;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.45rem;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.picker-today:hover {
+    background: rgba(128, 128, 128, 0.15);
+}

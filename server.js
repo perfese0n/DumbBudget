@@ -374,11 +374,14 @@ async function getTransactionsInRange(startDate, endDate) {
 // API Routes - all under BASE_PATH
 app.post(BASE_PATH + '/api/transactions', authMiddleware, async (req, res) => {
     try {
-        const { type, amount, description, category, date, recurring, notes } = req.body;
+        const { type, amount, description, category, date, recurring, notes, purchaseType } = req.body;
         
         // Basic validation
-        if (!type || !amount || !description || !date) {
+        if (!type || !amount || !date) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+        if (purchaseType && purchaseType !== 'good' && purchaseType !== 'dumb') {
+            return res.status(400).json({ error: 'Purchase type must be good or dumb' });
         }
         if (type !== 'income' && type !== 'expense') {
             return res.status(400).json({ error: 'Invalid transaction type' });
@@ -458,7 +461,7 @@ app.post(BASE_PATH + '/api/transactions', authMiddleware, async (req, res) => {
         const newTransaction = {
             id: crypto.randomUUID(),
             amount: parseFloat(amount),
-            description: sanitizeInput(description),
+            description: sanitizeInput(description || ''),
             date: adjustedDate,
             notes: sanitizeInput(notes || '')
         };
@@ -473,6 +476,7 @@ app.post(BASE_PATH + '/api/transactions', authMiddleware, async (req, res) => {
 
         if (type === 'expense') {
             newTransaction.category = sanitizeInput(category);
+            newTransaction.purchaseType = purchaseType || null;
             transactions[key].expenses.push(newTransaction);
         } else {
             transactions[key].income.push(newTransaction);
@@ -518,6 +522,12 @@ app.get(BASE_PATH + '/api/totals/:year/:month', authMiddleware, async (req, res)
         const totals = {
             income: monthData.income.reduce((sum, t) => sum + t.amount, 0),
             expenses: monthData.expenses.reduce((sum, t) => sum + t.amount, 0),
+            good: transactions
+                .filter(t => t.type === 'expense' && t.purchaseType === 'good')
+                .reduce((sum, t) => sum + t.amount, 0),
+            dumb: transactions
+                .filter(t => t.type === 'expense' && t.purchaseType === 'dumb')
+                .reduce((sum, t) => sum + t.amount, 0),
             balance: 0
         };
         
@@ -750,6 +760,12 @@ app.get(BASE_PATH + '/api/totals/range', authMiddleware, async (req, res) => {
             expenses: transactions
                 .filter(t => t.type === 'expense')
                 .reduce((sum, t) => sum + t.amount, 0),
+            good: transactions
+                .filter(t => t.type === 'expense' && t.purchaseType === 'good')
+                .reduce((sum, t) => sum + t.amount, 0),
+            dumb: transactions
+                .filter(t => t.type === 'expense' && t.purchaseType === 'dumb')
+                .reduce((sum, t) => sum + t.amount, 0),
             balance: 0
         };
         
@@ -806,19 +822,23 @@ app.get(BASE_PATH + '/api/export/range', authMiddleware, async (req, res) => {
 
         const transactions = await getTransactionsInRange(start, end);
 
-        // Convert to CSV with specified format
-        const csvRows = ['Category,Date,Description,Notes,Value'];
-        transactions.forEach(t => {
-            const category = t.type === 'income' ? 'Income' : t.category;
-            const value = t.type === 'income' ? t.amount : -t.amount;
-            // Escape description and notes to handle commas and quotes
-            const escapedDescription = (t.description || '').replace(/"/g, '""');
-            const escapedNotes = (t.notes || '').replace(/"/g, '""');
-            const formattedDescription = escapedDescription.includes(',') ? `"${escapedDescription}"` : escapedDescription;
-            const formattedNotes = escapedNotes.includes(',') ? `"${escapedNotes}"` : escapedNotes;
-            
-            csvRows.push(`${category},${t.date},${formattedDescription},${formattedNotes},${value}`);
-        });
+        // Convert to CSV: expenses only, with good/dumb purchase type
+        const csvEscape = (value) => {
+            const text = String(value ?? '').replace(/"/g, '""');
+            return /[",\n]/.test(text) ? `"${text}"` : text;
+        };
+        const csvRows = ['Date,Category,Purchase,Notes,Amount'];
+        transactions
+            .filter(t => t.type === 'expense')
+            .forEach(t => {
+                csvRows.push([
+                    t.date,
+                    csvEscape(t.category),
+                    t.purchaseType || '',
+                    csvEscape(t.notes),
+                    t.amount
+                ].join(','));
+            });
 
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename=transactions-${start}-to-${end}.csv`);
@@ -832,11 +852,14 @@ app.get(BASE_PATH + '/api/export/range', authMiddleware, async (req, res) => {
 app.put(BASE_PATH + '/api/transactions/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const { type, amount, description, category, date, recurring, notes } = req.body;
+        const { type, amount, description, category, date, recurring, notes, purchaseType } = req.body;
         
         // Basic validation
-        if (!type || !amount || !description || !date) {
+        if (!type || !amount || !date) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+        if (purchaseType && purchaseType !== 'good' && purchaseType !== 'dumb') {
+            return res.status(400).json({ error: 'Purchase type must be good or dumb' });
         }
         if (type !== 'income' && type !== 'expense') {
             return res.status(400).json({ error: 'Invalid transaction type' });
@@ -861,8 +884,9 @@ app.put(BASE_PATH + '/api/transactions/:id', authMiddleware, async (req, res) =>
                     transaction.category = sanitizeInput(category);
                     monthData.expenses.push({
                         ...transaction,
+                        purchaseType: purchaseType || null,
                         amount: parseFloat(amount),
-                        description: sanitizeInput(description),
+                        description: sanitizeInput(description || ''),
                         date,
                         recurring: recurring || null,
                         notes: sanitizeInput(notes || '')
@@ -871,7 +895,7 @@ app.put(BASE_PATH + '/api/transactions/:id', authMiddleware, async (req, res) =>
                     monthData.income[incomeIndex] = {
                         ...monthData.income[incomeIndex],
                         amount: parseFloat(amount),
-                        description: sanitizeInput(description),
+                        description: sanitizeInput(description || ''),
                         date,
                         recurring: recurring || null,
                         notes: sanitizeInput(notes || '')
@@ -891,7 +915,7 @@ app.put(BASE_PATH + '/api/transactions/:id', authMiddleware, async (req, res) =>
                     monthData.income.push({
                         ...transaction,
                         amount: parseFloat(amount),
-                        description: sanitizeInput(description),
+                        description: sanitizeInput(description || ''),
                         date,
                         recurring: recurring || null,
                         notes: sanitizeInput(notes || '')
@@ -900,8 +924,9 @@ app.put(BASE_PATH + '/api/transactions/:id', authMiddleware, async (req, res) =>
                     monthData.expenses[expenseIndex] = {
                         ...monthData.expenses[expenseIndex],
                         amount: parseFloat(amount),
-                        description: sanitizeInput(description),
+                        description: sanitizeInput(description || ''),
                         category: sanitizeInput(category),
+                        purchaseType: purchaseType || null,
                         date,
                         recurring: recurring || null,
                         notes: sanitizeInput(notes || '')

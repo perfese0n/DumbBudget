@@ -2,7 +2,7 @@ import { ToastManager } from "./managers/toast";
 const toastManager = new ToastManager(document.getElementById('toast-container'));
 
 // Global variables
-let currentTransactionType = 'income'; // Default transaction type
+let currentTransactionType = 'expense'; // This app only tracks expenses
 let currentFilter = null; // null = show all, 'income' = only income, 'expense' = only expenses
 let editingTransactionId = null;
 let currentSortField = 'date';
@@ -293,6 +293,17 @@ const formatCurrency = (amount) => {
 
 let currentDate = new Date();
 
+// Format a Date as YYYY-MM-DD in *local* time.
+// (toISOString() uses UTC, which shifts dates by a day in Belgium.)
+function toLocalISODate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+const PURCHASE_LABELS = { good: 'Good', dumb: 'Dumb' };
+
 // Shared fetch configuration with debug logging
 const fetchConfig = {
     credentials: 'include',
@@ -343,9 +354,8 @@ async function loadTransactions() {
         const transactions = await response.json();
         
         const transactionsList = document.getElementById('transactionsList');
-        let filteredTransactions = currentFilter 
-            ? transactions.filter(t => t.type === currentFilter)
-            : transactions;
+        // Only expenses are shown in this version of the app
+        let filteredTransactions = transactions.filter(t => t.type === 'expense');
             
         // Sort transactions
         filteredTransactions.sort((a, b) => {
@@ -360,26 +370,29 @@ async function loadTransactions() {
         });
             
         transactionsList.innerHTML = filteredTransactions.map(transaction => {
-            // Split the date string and format as M/D/YYYY without timezone conversion
+            // Show the date as DD/MM/YYYY (no timezone conversion)
             const [year, month, day] = transaction.date.split('-');
-            const formattedDate = `${parseInt(month)}/${parseInt(day)}/${year}`;
-            
+            const formattedDate = `${day}/${month}/${year}`;
+
             const isRecurring = transaction.isRecurringInstance || transaction.recurring;
-            
+            const purchase = transaction.purchaseType; // 'good', 'dumb' or undefined
+
             return `
             <div class="transaction-item ${isRecurring ? 'recurring-instance' : ''}" data-id="${transaction.id}" data-type="${transaction.type}">
                 <div class="transaction-content">
                     <div class="details">
-                        <div class="description">${escapeHtml(transaction.description)}</div>
+                        <div class="description">
+                            ${escapeHtml(transaction.category || 'Other')}
+                            ${purchase ? `<span class="purchase-badge ${purchase}">${PURCHASE_LABELS[purchase]}</span>` : ''}
+                        </div>
                         ${transaction.notes ? `<div class="notes">${escapeHtml(transaction.notes)}</div>` : ''}
                         <div class="metadata">
-                            ${transaction.category ? `<span class="category">${escapeHtml(transaction.category)}</span>` : ''}
                             <span class="date">${formattedDate}</span>
                             ${isRecurring ? `<span class="recurring-info">(Recurring)</span>` : ''}
                         </div>
                     </div>
-                    <div class="transaction-amount ${transaction.type}">
-                        ${transaction.type === 'expense' ? '-' : ''}${formatCurrency(transaction.amount)}
+                    <div class="transaction-amount ${purchase || 'unrated'}">
+                        ${formatCurrency(transaction.amount)}
                     </div>
                 </div>
                 <button class="delete-transaction" aria-label="Delete transaction">
@@ -437,7 +450,7 @@ async function loadTransactions() {
                         await handleFetchResponse(response);
                         await loadTransactions();
                         await updateTotals();
-                        toastManager.show('Transaction deleted!', 'error');
+                        toastManager.show('Expense deleted', 'error');
                     } catch (error) {
                         console.error('Error deleting transaction:', error);
                         toastManager.show('Failed to delete transaction. Please try again.', 'error');
@@ -466,8 +479,6 @@ function editTransaction(id, transaction, isRecurringInstance) {
 
     const modal = document.getElementById('transactionModal');
     const form = document.getElementById('transactionForm');
-    const toggleBtns = document.querySelectorAll('.toggle-btn');
-    const categoryField = document.getElementById('categoryField');
     const recurringCheckbox = document.getElementById('recurring-checkbox');
     const recurringOptions = document.getElementById('recurring-options');
     const recurringWeekday = document.getElementById('recurring-weekday');
@@ -477,25 +488,13 @@ function editTransaction(id, transaction, isRecurringInstance) {
 
     // Set form values
     document.getElementById('amount').value = transaction.amount;
-    document.getElementById('description').value = transaction.description;
+    document.getElementById('purchaseType').value = transaction.purchaseType || '';
+    document.getElementById('modalTitle').textContent = 'Edit expense';
     document.getElementById('transactionDate').value = transaction.date;
     document.getElementById('notes').value = transaction.notes || '';
     
-    // Update the currentTransactionType to match the transaction being edited
-    currentTransactionType = transaction.type;
-    
-    // Set transaction type
-    toggleBtns.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.type === transaction.type);
-    });
-    
-    // Show/hide and set category for expenses
-    if (transaction.type === 'expense') {
-        categoryField.style.display = 'block';
-        document.getElementById('category').value = transaction.category;
-    } else {
-        categoryField.style.display = 'none';
-    }
+    currentTransactionType = 'expense';
+    document.getElementById('category').value = transaction.category || 'Other';
 
     // Set recurring options if this is a recurring transaction
     if (transaction.recurring) {
@@ -551,18 +550,9 @@ async function updateTotals() {
         const response = await fetch(joinPath(`api/totals/range?start=${startDate}&end=${endDate}`), fetchConfig);
         await handleFetchResponse(response);
         const totals = await response.json();
-        document.getElementById('totalIncome').textContent = formatCurrency(totals.income);
-        document.getElementById('totalExpenses').textContent = formatCurrency(totals.expenses);
-        const balanceElement = document.getElementById('totalBalance');
-        balanceElement.textContent = formatCurrency(totals.balance);
-        
-        // Add appropriate class based on balance value
-        balanceElement.classList.remove('positive', 'negative');
-        if (totals.balance > 0) {
-            balanceElement.classList.add('positive');
-        } else if (totals.balance < 0) {
-            balanceElement.classList.add('negative');
-        }
+        document.getElementById('totalSpent').textContent = formatCurrency(totals.expenses);
+        document.getElementById('totalGood').textContent = formatCurrency(totals.good || 0);
+        document.getElementById('totalDumb').textContent = formatCurrency(totals.dumb || 0);
     } catch (error) {
         console.error('Error updating totals:', error);
     }
@@ -661,8 +651,6 @@ function initModalHandling() {
     const addTransactionBtn = document.getElementById('addTransactionBtn');
     const closeModalBtn = document.querySelector('.close-modal');
     const transactionForm = document.getElementById('transactionForm');
-    const categoryField = document.getElementById('categoryField');
-    const toggleBtns = document.querySelectorAll('.toggle-btn');
     const amountInput = document.getElementById('amount');
 
     // Initialize category handling
@@ -670,7 +658,8 @@ function initModalHandling() {
 
     // Create and add recurring controls
     const recurringControls = createRecurringControls();
-    transactionForm.appendChild(recurringControls);
+    // Put the "Recurring" option just above the submit button
+    transactionForm.insertBefore(recurringControls, transactionForm.querySelector('button[type="submit"]'));
     recurringControls.style.display = 'block';
 
     // Update amount input placeholder with current currency symbol
@@ -684,22 +673,17 @@ function initModalHandling() {
         modal.classList.add('active');
         // Reset form
         transactionForm.reset();
-        // Reset toggle buttons
-        toggleBtns.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.type === 'income');
-        });
-        // Hide category field for income by default
-        categoryField.style.display = 'none';
-        currentTransactionType = 'income';
-        
+        document.getElementById('modalTitle').textContent = 'Add expense';
+        document.getElementById('purchaseType').value = '';
+        currentTransactionType = 'expense';
+
         // Reset recurring options
         document.getElementById('recurring-checkbox').checked = false;
         document.getElementById('recurring-options').style.display = 'none';
         document.getElementById('recurring-weekday').style.display = 'none';
         
         // Set today's date as default
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('transactionDate').value = today;
+        document.getElementById('transactionDate').value = toLocalISODate(new Date());
 
         // Update amount placeholder with current currency
         updateAmountPlaceholder();
@@ -722,21 +706,6 @@ function initModalHandling() {
         }
     });
 
-    // Transaction type toggle
-    toggleBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            // Remove active class from all buttons
-            toggleBtns.forEach(b => b.classList.remove('active'));
-            // Add active class to clicked button
-            btn.classList.add('active');
-            
-            currentTransactionType = btn.dataset.type;
-            
-            // Show/hide category field based on transaction type
-            categoryField.style.display = currentTransactionType === 'expense' ? 'block' : 'none';
-        });
-    });
-
     // Update form submission
     transactionForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -744,8 +713,9 @@ function initModalHandling() {
         const formData = {
             type: currentTransactionType,
             amount: parseFloat(document.getElementById('amount').value),
-            description: document.getElementById('description').value,
-            category: currentTransactionType === 'expense' ? document.getElementById('category').value : null,
+            description: '',
+            category: document.getElementById('category').value,
+            purchaseType: document.getElementById('purchaseType').value,
             date: document.getElementById('transactionDate').value,
             recurring: buildRecurringPattern(),
             notes: document.getElementById('notes').value
@@ -781,8 +751,7 @@ function initModalHandling() {
             await loadTransactions();
             await updateTotals();
 
-            const transactionTypeMessage = currentTransactionType === 'income' ? 'Income' : 'Expense';
-            toastManager.show(`${transactionTypeMessage} saved!`, 'success');
+            toastManager.show('Expense saved!', 'success');
         } catch (error) {
             console.error('Error saving transaction:', error);
             toastManager.show('Failed to save transaction. Please try again.', 'error');
@@ -956,33 +925,8 @@ async function initMainPage() {
         amountInput.placeholder = `Amount (${currencyInfo.symbol})`;
     }
 
-    const startDateInput = document.getElementById('startDate');
-    const endDateInput = document.getElementById('endDate');
-
-    // Set initial date range to current month
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-    startDateInput.value = firstDay.toISOString().split('T')[0];
-    endDateInput.value = lastDay.toISOString().split('T')[0];
-
-    // Add event listeners for date changes
-    startDateInput.addEventListener('change', () => {
-        if (startDateInput.value > endDateInput.value) {
-            endDateInput.value = startDateInput.value;
-        }
-        loadTransactions();
-        updateTotals();
-    });
-
-    endDateInput.addEventListener('change', () => {
-        if (endDateInput.value < startDateInput.value) {
-            startDateInput.value = endDateInput.value;
-        }
-        loadTransactions();
-        updateTotals();
-    });
+    // Month navigation (button + picker + arrows). Starts on the current month.
+    initMonthNavigation();
 
     // Export to CSV
     document.getElementById('exportBtn').addEventListener('click', async () => {
@@ -1054,37 +998,30 @@ async function initMainPage() {
             doc.setFontSize(14);
             doc.text('Summary', 20, 45);
             doc.setFontSize(12);
-            doc.text(`Total Income: ${formatCurrency(totals.income)}`, 20, 55);
-            doc.text(`Total Expenses: ${formatCurrency(totals.expenses)}`, 20, 65);
-            doc.text(`Balance: ${formatCurrency(totals.balance)}`, 20, 75);
+            doc.text(`Total spent: ${formatCurrency(totals.expenses)}`, 20, 55);
+            doc.text(`Good purchases: ${formatCurrency(totals.good || 0)}`, 20, 65);
+            doc.text(`Dumb purchases: ${formatCurrency(totals.dumb || 0)}`, 20, 75);
             
             // Add transactions table
-            const tableData = transactions.map(t => [
-                t.date,
-                t.description,
-                t.notes || '-',
-                t.category || '-',
-                formatCurrency(t.type === 'expense' ? -t.amount : t.amount),
-                t.type
-            ]);
-            
+            const tableData = transactions
+                .filter(t => t.type === 'expense')
+                .map(t => [
+                    t.date,
+                    t.category || '-',
+                    PURCHASE_LABELS[t.purchaseType] || '-',
+                    t.notes || '-',
+                    formatCurrency(t.amount)
+                ]);
+
             doc.autoTable({
                 startY: 85,
-                head: [['Date', 'Description', 'Notes', 'Category', 'Amount', 'Type']],
+                head: [['Date', 'Category', 'Purchase', 'Notes', 'Amount']],
                 body: tableData,
                 theme: 'grid',
                 headStyles: { fillColor: [66, 66, 66] },
-                styles: { fontSize: 9 },
-                columnStyles: {
-                    0: { cellWidth: 25 }, // Date
-                    1: { cellWidth: 40 }, // Description
-                    2: { cellWidth: 35 }, // Notes
-                    3: { cellWidth: 25 }, // Category
-                    4: { cellWidth: 25 }, // Amount
-                    5: { cellWidth: 15 }  // Type
-                }
+                styles: { fontSize: 9 }
             });
-            
+
             // Save the PDF
             doc.save(`transactions-${startDate}-to-${endDate}.pdf`);
             
@@ -1092,28 +1029,6 @@ async function initMainPage() {
             console.error('Error exporting to PDF:', error);
             toastManager.show('Failed to export to PDF. Please try again.', 'error');
         }
-    });
-
-    // Add filter button handlers
-    const filterButtons = document.querySelectorAll('.filter-btn');
-    filterButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const filterType = btn.dataset.filter;
-            
-            // Remove active class from all buttons
-            filterButtons.forEach(b => b.classList.remove('active'));
-            
-            if (currentFilter === filterType) {
-                // If clicking the active filter, clear it
-                currentFilter = null;
-            } else {
-                // Set new filter and activate button
-                currentFilter = filterType;
-                btn.classList.add('active');
-            }
-            
-            loadTransactions();
-        });
     });
 
     // Initialize sort controls
@@ -1144,7 +1059,291 @@ async function initMainPage() {
     // Initial load
     loadTransactions();
     updateTotals();
+    initViewTabs();
 }
+
+// ============================================================
+// Selected month (shared by "My Budget" and "Overview")
+// ============================================================
+
+const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function firstOfMonth(date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function sameMonth(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+}
+
+let selectedMonth = firstOfMonth(new Date());
+let pickerYear = selectedMonth.getFullYear();
+
+// Switch the whole app to a month and reload everything for it
+function setSelectedMonth(date, { reload = true } = {}) {
+    selectedMonth = firstOfMonth(date);
+    const last = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0);
+    document.getElementById('startDate').value = toLocalISODate(selectedMonth);
+    document.getElementById('endDate').value = toLocalISODate(last);
+
+    const label = selectedMonth.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    document.querySelectorAll('.selected-month-label').forEach(el => { el.textContent = label; });
+
+    if (reload) {
+        loadTransactions();
+        updateTotals();
+        if (!document.getElementById('overviewView').hidden) renderOverview();
+    }
+}
+
+function stepMonth(step) {
+    setSelectedMonth(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + step, 1));
+}
+
+function renderMonthPicker() {
+    const today = new Date();
+    document.getElementById('pickerYear').textContent = pickerYear;
+    document.getElementById('pickerMonths').innerHTML = MONTH_NAMES_SHORT.map((name, i) => {
+        const isSelected = pickerYear === selectedMonth.getFullYear() && i === selectedMonth.getMonth();
+        const isToday = pickerYear === today.getFullYear() && i === today.getMonth();
+        return `<button type="button" class="picker-month ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}" data-month="${i}">${name}</button>`;
+    }).join('');
+}
+
+function openMonthPicker(open) {
+    const picker = document.getElementById('monthPicker');
+    picker.hidden = !open;
+    document.getElementById('monthPickerBtn').setAttribute('aria-expanded', String(open));
+    if (open) {
+        pickerYear = selectedMonth.getFullYear();
+        renderMonthPicker();
+    }
+}
+
+function initMonthNavigation() {
+    const picker = document.getElementById('monthPicker');
+
+    document.getElementById('monthPickerBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        openMonthPicker(picker.hidden);
+    });
+    document.getElementById('pickerPrevYear').addEventListener('click', () => { pickerYear--; renderMonthPicker(); });
+    document.getElementById('pickerNextYear').addEventListener('click', () => { pickerYear++; renderMonthPicker(); });
+    document.getElementById('pickerMonths').addEventListener('click', (e) => {
+        const btn = e.target.closest('.picker-month');
+        if (!btn) return;
+        setSelectedMonth(new Date(pickerYear, Number(btn.dataset.month), 1));
+        openMonthPicker(false);
+    });
+    document.getElementById('pickerThisMonth').addEventListener('click', () => {
+        setSelectedMonth(new Date());
+        openMonthPicker(false);
+    });
+
+    // Close the picker when clicking elsewhere or pressing Escape
+    picker.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => openMonthPicker(false));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') openMonthPicker(false); });
+
+    // ‹ › arrows (on both pages)
+    document.querySelectorAll('.month-step').forEach(btn =>
+        btn.addEventListener('click', () => stepMonth(Number(btn.dataset.step))));
+
+    // Start on the current month (data is loaded by initMainPage right after)
+    setSelectedMonth(new Date(), { reload: false });
+
+    // When a new month starts, move along with it — but only if you were
+    // looking at the month that just ended (don't yank you away from browsing).
+    let lastKnownMonth = firstOfMonth(new Date());
+    const followCalendar = () => {
+        const now = firstOfMonth(new Date());
+        if (!sameMonth(now, lastKnownMonth)) {
+            if (sameMonth(selectedMonth, lastKnownMonth)) setSelectedMonth(now);
+            lastKnownMonth = now;
+        }
+    };
+    setInterval(followCalendar, 60 * 1000);                 // check every minute
+    document.addEventListener('visibilitychange', followCalendar); // and when you come back to the tab
+}
+
+// ============================================================
+// Overview page: monthly spending ring chart
+// ============================================================
+
+
+// Colours that read well on the dark background
+const CATEGORY_COLORS = [
+    '#5B8DEF', '#F2A65A', '#56C596', '#E86A92', '#B48CF2', '#4FC1E9',
+    '#F6D365', '#FF7F6E', '#8BD3A0', '#C9A0DC', '#7AA6C2', '#E5B181'
+];
+
+// Simple line icons (24x24). Categories are matched by keywords in their name.
+const ICONS = {
+    food: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>',
+    groceries: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
+    drinks: '<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>',
+    transport: '<rect x="4" y="3" width="16" height="13" rx="3"/><path d="M4 10h16"/><path d="M8 16l-2 5M16 16l2 5"/>',
+    bills: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    home: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    shopping: '<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>',
+    health: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>',
+    sport: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    phone: '<rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+    travel: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    fun: '<rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/>',
+    subscriptions: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+    gift: '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
+    other: '<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>'
+};
+
+// Which icon to use for a category name (first matching keyword wins).
+// Add your own keywords here to change which icon a category gets.
+const ICON_KEYWORDS = [
+    ['groceries', ['grocer', 'supermarket', 'delhaize', 'colruyt', 'carrefour', 'aldi', 'lidl']],
+    ['drinks', ['drink', 'coffee', 'bar', 'beer', 'going out', 'night']],
+    ['food', ['food', 'restaurant', 'eat', 'lunch', 'dinner', 'takeaway', 'delivery']],
+    ['transport', ['transport', 'taxi', 'uber', 'train', 'bus', 'metro', 'stib', 'car', 'fuel', 'parking']],
+    ['home', ['rent', 'home', 'house', 'apartment', 'mortgage']],
+    ['bills', ['bill', 'utilit', 'electric', 'gas', 'water', 'insurance', 'tax']],
+    ['shopping', ['cloth', 'shop', 'fashion', 'amazon']],
+    ['health', ['health', 'doctor', 'pharma', 'medic', 'dentist']],
+    ['sport', ['sport', 'gym', 'fitness', 'tennis', 'climb', 'boulder', 'swim', 'run']],
+    ['phone', ['phone', 'mobile', 'internet']],
+    ['travel', ['travel', 'trip', 'flight', 'hotel', 'holiday', 'vacation']],
+    ['fun', ['fun', 'entertain', 'movie', 'cinema', 'game', 'concert']],
+    ['subscriptions', ['subscri', 'netflix', 'spotify', 'streaming']],
+    ['gift', ['gift', 'present']]
+];
+
+function iconFor(category) {
+    const name = (category || '').toLowerCase();
+    for (const [icon, words] of ICON_KEYWORDS) {
+        if (words.some(w => name.includes(w))) return ICONS[icon];
+    }
+    return ICONS.other;
+}
+
+// All categories the user can pick (built-in + custom), in dropdown order
+function knownCategories() {
+    return Array.from(document.getElementById('category').options)
+        .map(o => o.value)
+        .filter(v => v && v !== 'add_new');
+}
+
+function initViewTabs() {
+    document.querySelectorAll('.view-tab').forEach(tab =>
+        tab.addEventListener('click', () => showView(tab.dataset.view)));
+
+    // Remember the open tab when the page is refreshed
+    showView(window.location.hash === '#overview' ? 'overview' : 'budget');
+}
+
+function showView(view) {
+    document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+    document.getElementById('budgetView').hidden = view !== 'budget';
+    document.getElementById('overviewView').hidden = view !== 'overview';
+    history.replaceState(null, '', view === 'overview' ? '#overview' : window.location.pathname);
+    if (view === 'overview') renderOverview();
+}
+
+async function renderOverview() {
+    const first = selectedMonth;
+    const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
+
+    let expenses = [];
+    try {
+        const response = await fetch(
+            joinPath(`api/transactions/range?start=${toLocalISODate(first)}&end=${toLocalISODate(last)}`),
+            fetchConfig
+        );
+        await handleFetchResponse(response);
+        expenses = (await response.json()).filter(t => t.type === 'expense');
+    } catch (error) {
+        console.error('Error loading overview:', error);
+        toastManager.show('Could not load the overview.', 'error');
+        return;
+    }
+
+    // Add up spending per category, and good vs dumb
+    const byCategory = {};
+    let total = 0, good = 0, dumb = 0;
+    for (const t of expenses) {
+        const cat = t.category || 'Other';
+        byCategory[cat] = (byCategory[cat] || 0) + t.amount;
+        total += t.amount;
+        if (t.purchaseType === 'good') good += t.amount;
+        if (t.purchaseType === 'dumb') dumb += t.amount;
+    }
+
+    // Give every category a fixed colour (based on dropdown order, so it stays the same month to month)
+    const allCats = [...new Set([...knownCategories(), ...Object.keys(byCategory)])];
+    const colorOf = {};
+    allCats.forEach((c, i) => { colorOf[c] = CATEGORY_COLORS[i % CATEGORY_COLORS.length]; });
+
+    // Icons around the ring: categories with spending first, then the rest (max 12)
+    const ringCats = [...allCats]
+        .sort((a, b) => (byCategory[b] || 0) - (byCategory[a] || 0))
+        .slice(0, 12);
+
+    // --- Donut ring (SVG circles with dashed strokes, one per category)
+    const radius = 38;
+    const circumference = 2 * Math.PI * radius;
+    const spent = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+    let offset = 0;
+    let segments = `<circle class="ring-track" cx="50" cy="50" r="${radius}"/>`;
+    for (const [cat, amount] of spent) {
+        const length = (amount / total) * circumference;
+        const gap = spent.length > 1 ? 0.8 : 0; // small gap between slices
+        segments += `<circle class="ring-segment" cx="50" cy="50" r="${radius}"
+            stroke="${colorOf[cat]}"
+            stroke-dasharray="${Math.max(length - gap, 0)} ${circumference}"
+            stroke-dashoffset="${-offset}"><title>${escapeHtml(cat)}</title></circle>`;
+        offset += length;
+    }
+    document.getElementById('ringSvg').innerHTML = segments;
+
+    // --- Centre text: total, then good (green) and dumb (red)
+    document.getElementById('ringTotal').textContent = formatCurrency(total);
+    document.getElementById('ringGood').textContent = `Good ${formatCurrency(good)}`;
+    document.getElementById('ringDumb').textContent = `Dumb ${formatCurrency(dumb)}`;
+
+    // --- Category icons placed in a circle around the ring
+    document.getElementById('ringIcons').innerHTML = ringCats.map((cat, i) => {
+        const angle = (i / ringCats.length) * 2 * Math.PI - Math.PI / 2; // start at the top
+        const x = 50 + 43 * Math.cos(angle);
+        const y = 50 + 43 * Math.sin(angle);
+        const amount = byCategory[cat] || 0;
+        const pct = total ? Math.round((amount / total) * 100) : 0;
+        return `
+            <div class="ring-icon ${amount ? '' : 'empty'}" style="left:${x}%; top:${y}%; color:${colorOf[cat]}" title="${escapeHtml(cat)}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${iconFor(cat)}</svg>
+                <span class="ring-pct">${amount ? pct + '%' : ''}</span>
+            </div>`;
+    }).join('');
+
+    // --- Good vs dumb bar (share of rated spending)
+    const rated = good + dumb;
+    const goodPct = rated ? Math.round((good / rated) * 100) : 0;
+    const dumbPct = rated ? 100 - goodPct : 0;
+    document.getElementById('goodPct').textContent = `Good ${goodPct}%`;
+    document.getElementById('dumbPct').textContent = `Dumb ${dumbPct}%`;
+    document.getElementById('splitBarGood').style.width = `${goodPct}%`;
+    document.getElementById('splitBarDumb').style.width = `${dumbPct}%`;
+
+    // --- Category list under the chart
+    document.getElementById('categoryList').innerHTML = spent.length
+        ? spent.map(([cat, amount]) => `
+            <div class="category-row">
+                <span class="category-icon" style="color:${colorOf[cat]}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconFor(cat)}</svg>
+                </span>
+                <span class="category-name">${escapeHtml(cat)}</span>
+                <span class="category-pct">${Math.round((amount / total) * 100)}%</span>
+                <span class="category-amount">${formatCurrency(amount)}</span>
+            </div>`).join('')
+        : '<p class="empty-state">No expenses this month yet.</p>';
+}
+
 
 const registerServiceWorker = () => {
      // Register PWA Service Worker

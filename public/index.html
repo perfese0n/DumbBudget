@@ -15,7 +15,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             const siteTitle = window.appConfig.title;
             document.title = siteTitle;
-            document.querySelector('h1').textContent = siteTitle;
+            const titleEl = document.getElementById('instance-name');
+            if (titleEl) titleEl.textContent = siteTitle;
         });
     </script>
     <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
@@ -42,49 +43,57 @@
             </button>
 
             <header>
-                <h1><span id="instance-name">DumbBudget</span></h1>
+                <nav class="view-tabs" aria-label="Pages">
+                    <button class="view-tab active" data-view="budget"><span id="instance-name">My Budget</span></button>
+                    <button class="view-tab" data-view="overview">Overview</button>
+                </nav>
             </header>
+
+            <div id="budgetView" class="view">
 
             <section class="overview">
                 <div class="balance-card">
-                    <h3>Balance</h3>
-                    <div class="amount" id="totalBalance">$0.00</div>
-                </div>
-                <div class="summary-cards">
-                    <div class="card income">
-                        <div class="card-header">
-                            <h3>Income</h3>
-                            <button class="filter-btn" data-filter="income" aria-label="Filter by income">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="amount" id="totalIncome">$0.00</div>
-                    </div>
-                    <div class="card expenses">
-                        <div class="card-header">
-                            <h3>Expenses</h3>
-                            <button class="filter-btn" data-filter="expense" aria-label="Filter by expenses">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="amount" id="totalExpenses">$0.00</div>
+                    <h3>Total spent</h3>
+                    <div class="amount" id="totalSpent">0,00</div>
+                    <div class="spent-split">
+                        <span class="good-text">Good <strong id="totalGood">0</strong></span>
+                        <span class="split-dot">·</span>
+                        <span class="dumb-text">Dumb <strong id="totalDumb">0</strong></span>
                     </div>
                 </div>
             </section>
 
-            <button id="addTransactionBtn" class="add-transaction-btn">Add Transaction</button>
+            <div class="action-row">
+                <div class="month-control">
+                    <button class="month-step" data-step="-1" aria-label="Previous month">&#8249;</button>
+                    <button id="monthPickerBtn" class="month-picker-btn" aria-haspopup="true" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <span class="selected-month-label">November 2026</span>
+                    </button>
+                    <button class="month-step" data-step="1" aria-label="Next month">&#8250;</button>
 
-            <div class="date-range-selector">
-                <div class="date-input-group">
-                    <input type="date" id="startDate" aria-label="Start date">
-                    <span class="date-separator">to</span>
-                    <input type="date" id="endDate" aria-label="End date">
+                    <!-- Pop-up month picker: choose a year, then a month -->
+                    <div id="monthPicker" class="month-picker" hidden>
+                        <div class="picker-year">
+                            <button type="button" id="pickerPrevYear" aria-label="Previous year">&#8249;</button>
+                            <span id="pickerYear">2026</span>
+                            <button type="button" id="pickerNextYear" aria-label="Next year">&#8250;</button>
+                        </div>
+                        <div class="picker-months" id="pickerMonths"></div>
+                        <button type="button" id="pickerThisMonth" class="picker-today">This month</button>
+                    </div>
                 </div>
+                <button id="addTransactionBtn" class="add-transaction-btn">Add Expense</button>
             </div>
+
+            <!-- Hidden: the selected month's first and last day (used to load data) -->
+            <input type="hidden" id="startDate">
+            <input type="hidden" id="endDate">
 
             <section class="transactions">
                 <div class="transactions-header">
@@ -122,6 +131,35 @@
                     <button id="exportPdfBtn" class="export-btn">PDF</button>
                 </div>
             </footer>
+            </div>
+
+            <div id="overviewView" class="view" hidden>
+                <div class="month-nav">
+                    <button class="month-btn month-step" data-step="-1" aria-label="Previous month">&#8249;</button>
+                    <span class="month-label selected-month-label">November 2026</span>
+                    <button class="month-btn month-step" data-step="1" aria-label="Next month">&#8250;</button>
+                </div>
+
+                <div class="ring-wrap" id="ringWrap">
+                    <svg class="ring" viewBox="0 0 100 100" id="ringSvg" aria-hidden="true"></svg>
+                    <div class="ring-center">
+                        <div class="ring-total" id="ringTotal">0</div>
+                        <div class="ring-good" id="ringGood">0</div>
+                        <div class="ring-dumb" id="ringDumb">0</div>
+                    </div>
+                    <div id="ringIcons"></div>
+                </div>
+
+                <div class="split-bar-card">
+                    <div class="split-bar-labels">
+                        <span class="good-text" id="goodPct">Good 0%</span>
+                        <span class="dumb-text" id="dumbPct">Dumb 0%</span>
+                    </div>
+                    <div class="split-bar"><div class="split-bar-good" id="splitBarGood"></div><div class="split-bar-dumb" id="splitBarDumb"></div></div>
+                </div>
+
+                <div class="category-list" id="categoryList"></div>
+            </div>
         </div>
         <div id="toast-container" class="toast-container"></div>
     </main>
@@ -130,14 +168,12 @@
     <div id="transactionModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <div class="transaction-type-toggle">
-                    <button class="toggle-btn active" data-type="income">Income</button>
-                    <button class="toggle-btn" data-type="expense">Expense</button>
-                </div>
-                <button class="close-modal">&times;</button>
+                <h2 class="modal-title" id="modalTitle">Add expense</h2>
+                <button class="close-modal" aria-label="Close">&times;</button>
             </div>
             <form id="transactionForm">
-                <div id="categoryField" style="display: none;">
+                <label class="field-label" for="category">Category</label>
+                <div id="categoryField">
                     <select id="category" required>
                         <option value="Bills">Bills</option>
                         <option value="Food">Food</option>
@@ -151,13 +187,20 @@
                         <button type="button" id="cancelCategory">Cancel</button>
                     </div>
                 </div>
+                <label class="field-label" for="amount">Amount</label>
                 <div class="amount-input-wrapper">
                     <span class="currency-symbol">$</span>
-                    <input type="number" id="amount" placeholder="0.00" required step="0.01">
+                    <input type="number" id="amount" placeholder="0.00" required step="0.01" min="0.01" inputmode="decimal">
                 </div>
-                <input type="text" id="description" placeholder="Description" required>
-                <textarea id="notes" placeholder="Notes (optional)" rows="3"></textarea>
+                <label class="field-label" for="purchaseType">Was it worth it?</label>
+                <select id="purchaseType" required>
+                    <option value="" disabled selected>Choose…</option>
+                    <option value="good">👍 Good purchase</option>
+                    <option value="dumb">👎 Dumb purchase</option>
+                </select>
+                <label class="field-label" for="transactionDate">Date</label>
                 <input type="date" id="transactionDate" required>
+                <textarea id="notes" placeholder="Notes (optional)" rows="2"></textarea>
                 <button type="submit">Add</button>
             </form>
         </div>
